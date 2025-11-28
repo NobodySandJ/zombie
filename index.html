@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zombie Hunt: Multiplayer Protocol</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+        body { font-family: 'Share Tech Mono', monospace; background-color: #020617; color: #e2e8f0; }
+        .neon-box { box-shadow: 0 0 10px rgba(59, 130, 246, 0.5); border: 1px solid rgba(59, 130, 246, 0.5); }
+        .neon-red { box-shadow: 0 0 10px rgba(239, 68, 68, 0.5); border: 1px solid rgba(239, 68, 68, 0.5); }
+        .hidden { display: none !important; }
+        .card-btn:active { transform: scale(0.95); }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center p-4 bg-[url('https://www.transparenttextures.com/patterns/dark-matter.png')]">
+
+    <div id="lobby-screen" class="w-full max-w-md flex flex-col gap-6 mt-10">
+        <h1 class="text-4xl text-center text-red-500 font-bold tracking-widest">ZOMBIE HUNT</h1>
+        <p class="text-center text-gray-400 text-sm">P2P Secure Connection</p>
+        
+        <div class="p-6 bg-slate-900 rounded-lg neon-box flex flex-col gap-4">
+            <h2 class="text-xl font-bold text-blue-400">BUAT ROOM (HOST)</h2>
+            <p class="text-xs text-gray-400">Laptop Anda akan menjadi server.</p>
+            <input type="text" id="host-name" placeholder="Nama Anda (Host)" class="w-full bg-slate-800 p-2 rounded text-white border border-slate-600">
+            <button onclick="createGame()" class="w-full bg-blue-600 hover:bg-blue-700 py-2 rounded font-bold">BUAT GAME BARU</button>
+        </div>
+
+        <div class="flex items-center justify-center text-gray-500">- ATAU -</div>
+
+        <div class="p-6 bg-slate-900 rounded-lg neon-red flex flex-col gap-4">
+            <h2 class="text-xl font-bold text-red-400">GABUNG GAME</h2>
+            <input type="text" id="join-name" placeholder="Nama Anda" class="w-full bg-slate-800 p-2 rounded text-white border border-slate-600">
+            <input type="text" id="room-id-input" placeholder="Masukkan ID Room Host" class="w-full bg-slate-800 p-2 rounded text-white border border-slate-600 text-center uppercase tracking-widest">
+            <button onclick="joinGame()" class="w-full bg-red-600 hover:bg-red-700 py-2 rounded font-bold">MASUK ROOM</button>
+        </div>
+    </div>
+
+    <div id="waiting-screen" class="hidden w-full max-w-2xl mt-10">
+        <div class="bg-slate-900 p-6 rounded-lg border border-slate-700 text-center">
+            <h2 class="text-2xl font-bold mb-2">LOBBY AREA</h2>
+            <div id="room-id-display" class="bg-black p-3 rounded text-3xl font-mono text-yellow-400 tracking-widest mb-4 cursor-pointer select-all border border-yellow-600">
+                LOADING...
+            </div>
+            <p class="text-sm text-gray-400 mb-6">Bagikan ID di atas ke teman untuk bergabung.</p>
+            
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8" id="player-list">
+                </div>
+
+            <div id="host-controls" class="hidden">
+                <p class="text-xs text-gray-500 mb-2">Slot kosong akan diisi BOT otomatis.</p>
+                <button onclick="startGame()" class="px-8 py-3 bg-green-600 hover:bg-green-700 rounded font-bold text-white text-xl shadow-lg shadow-green-900/50">
+                    MULAI GAME (START)
+                </button>
+            </div>
+            <div id="client-wait-msg" class="hidden text-yellow-500 animate-pulse">
+                Menunggu Host memulai permainan...
+            </div>
+        </div>
+    </div>
+
+    <div id="game-screen" class="hidden w-full max-w-4xl flex flex-col gap-4">
+        <div class="flex justify-between items-center bg-slate-900 p-4 rounded border border-slate-700">
+            <div>
+                <span class="text-gray-400 text-xs">ROUND</span>
+                <div id="round-counter" class="text-2xl font-bold">1/10</div>
+            </div>
+            <div class="flex gap-6">
+                <div class="text-center"><span class="text-blue-400 text-xs">HUMAN</span><div id="count-human" class="text-xl">?</div></div>
+                <div class="text-center"><span class="text-red-500 text-xs">ZOMBIE</span><div id="count-zombie" class="text-xl">?</div></div>
+            </div>
+        </div>
+
+        <div class="bg-black/50 p-6 rounded-lg border border-slate-800 min-h-[200px] flex flex-col items-center justify-center text-center relative">
+            <div id="game-message" class="text-lg mb-4 text-yellow-300 font-bold">Pilih kartu untuk bertindak...</div>
+            
+            <div id="duel-animation" class="hidden flex gap-8 items-center justify-center animate-pulse">
+                <div class="text-center">
+                    <div class="text-xs text-gray-500">YOU</div>
+                    <div id="anim-my-card" class="text-4xl">🂡</div>
+                </div>
+                <div class="text-2xl text-red-500">VS</div>
+                <div class="text-center">
+                    <div class="text-xs text-gray-500">OPPONENT</div>
+                    <div id="anim-op-card" class="text-4xl">?</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-slate-900 p-4 rounded-lg border-t-4 border-blue-500" id="player-panel">
+            <div class="flex justify-between items-center mb-4">
+                <div id="my-role-badge" class="px-3 py-1 bg-blue-900 text-blue-300 rounded text-xs font-bold border border-blue-500">HUMAN</div>
+                <div class="text-xs text-gray-400">NAME: <span id="my-name-display">Player</span></div>
+            </div>
+            
+            <div id="cards-container" class="flex flex-wrap justify-center gap-3">
+                </div>
+        </div>
+    </div>
+
+    <script>
+        // --- KONFIGURASI P2P ---
+        let peer;
+        let conn; // Untuk client
+        let connections = []; // Untuk host (array of connections)
+        let myId;
+        let isHost = false;
+        let myPlayerId; // ID unik dalam game logic
+
+        // --- GAME STATE (Hanya Host yang memproses ini) ---
+        const MAX_PLAYERS = 20;
+        let gameState = {
+            round: 1,
+            players: [], // {id, name, isBot, role, cards, ammoS, ammoV, action, isDead}
+            logs: []
+        };
+
+        // --- SETUP AWAL ---
+        
+        function initPeer(id = null) {
+            // Membuat ID acak 4 digit agar mudah diketik
+            const customId = id ? id : Math.random().toString(36).substr(2, 4).toUpperCase();
+            peer = new Peer(customId);
+
+            peer.on('open', (id) => {
+                myId = id;
+                console.log('My ID:', id);
+                if (isHost) setupHost();
+            });
+
+            peer.on('error', (err) => {
+                alert("ID mungkin sudah dipakai atau koneksi error. Coba refresh.");
+                console.error(err);
+            });
+        }
+
+        // --- HOST LOGIC ---
+
+        function createGame() {
+            const name = document.getElementById('host-name').value;
+            if(!name) return alert("Masukkan nama!");
+            
+            isHost = true;
+            initPeer(); // Generate random ID
+        }
+
+        function setupHost() {
+            switchScreen('waiting-screen');
+            document.getElementById('room-id-display').innerText = myId;
+            document.getElementById('host-controls').classList.remove('hidden');
+
+            // Add Host as Player 1
+            addPlayerToState(myId, document.getElementById('host-name').value, false, true);
+
+            // Listen for connections
+            peer.on('connection', (c) => {
+                c.on('open', () => {
+                    connections.push(c);
+                    
+                    // Listen data dari client
+                    c.on('data', (data) => handleDataFromClient(c, data));
+                });
+            });
+        }
+
+        function addPlayerToState(connId, name, isBot, isMe) {
+            const pId = connId; // Gunakan PeerID sebagai PlayerID
+            if(isMe) myPlayerId = pId;
+
+            gameState.players.push({
+                id: pId,
+                name: name,
+                isBot: isBot,
+                role: 'HUMAN', // Default awal
+                cards: [10, 8, 6, 4, 2],
+                ammoS: 1, // Shotgun
+                ammoV: 1, // Vaccine
+                action: null, // Pilihan kartu ronde ini
+                isDead: false,
+                lastOpponentId: null
+            });
+            broadcastPlayerList();
+        }
+
+        function broadcastPlayerList() {
+            const list = gameState.players.map(p => ({name: p.name, isBot: p.isBot}));
+            // Send to UI Host
+            updateLobbyUI(list);
+            // Send to Clients
+            broadcast({type: 'LOBBY_UPDATE', data: list});
+        }
+
+        function startGame() {
+            // 1. Fill Bots
+            const currentCount = gameState.players.length;
+            const botsNeeded = MAX_PLAYERS - currentCount;
+            for(let i=0; i<botsNeeded; i++) {
+                addPlayerToState(`bot-${i}`, `BOT-${i+1}`, true, false);
+            }
+
+            // 2. Assign Roles (4 Zombies random)
+            let indices = Array.from({length: MAX_PLAYERS}, (_, i) => i);
+            indices.sort(() => Math.random() - 0.5);
+            let zombieIndices = indices.slice(0, 4);
+            
+            gameState.players.forEach((p, idx) => {
+                if(zombieIndices.includes(idx)) {
+                    p.role = 'ZOMBIE';
+                }
+            });
+
+            // 3. Start Round
+            startNewRound();
+        }
+
+        function startNewRound() {
+            // Reset actions
+            gameState.players.forEach(p => p.action = null);
+            
+            // Matchmaking (Pairing)
+            let alivePlayers = gameState.players.filter(p => !p.isDead);
+            // Shuffle
+            alivePlayers.sort(() => Math.random() - 0.5);
+            
+            // Assign pairs (simply by adjacent index)
+            for(let i=0; i<alivePlayers.length; i+=2) {
+                if(i+1 < alivePlayers.length) {
+                    alivePlayers[i].lastOpponentId = alivePlayers[i+1].id;
+                    alivePlayers[i+1].lastOpponentId = alivePlayers[i].id;
+                } else {
+                    alivePlayers[i].lastOpponentId = null; // Bye round (jarang terjadi di genap 20)
+                }
+            }
+
+            // Broadcast State
+            broadcastState();
+        }
+
+        function handleDataFromClient(conn, data) {
+            if(data.type === 'JOIN') {
+                addPlayerToState(conn.peer, data.name, false, false);
+            }
+            if(data.type === 'ACTION') {
+                // Client submit kartu
+                let p = gameState.players.find(pl => pl.id === conn.peer);
+                if(p) {
+                    p.action = data.card;
+                    checkRoundComplete();
+                }
+            }
+        }
+
+        function checkRoundComplete() {
+            // Cek apakah semua HUMAN (bukan bot, bukan dead) sudah submit
+            const pending = gameState.players.filter(p => !p.isBot && !p.isDead && p.action === null);
+            
+            if(pending.length === 0) {
+                // Semua manusia sudah pilih, sekarang giliran BOT pilih
+                gameState.players.forEach(p => {
+                    if(p.isBot && !p.isDead) {
+                        // Bot Logic Sederhana
+                        if(p.role === 'ZOMBIE' && Math.random() > 0.5) p.action = 'Z_BITE';
+                        else if (p.role === 'HUMAN' && Math.random() < 0.1 && p.ammoS > 0) p.action = 'SHOTGUN';
+                        else {
+                            // Pick random number card
+                            const numCards = p.cards.filter(c => typeof c === 'number');
+                            if(numCards.length > 0) p.action = numCards[Math.floor(Math.random()*numCards.length)];
+                            else p.action = 'SKIP'; // Habis kartu
+                        }
+                    }
+                });
+                
+                resolveRound();
+            }
+        }
+
+        function resolveRound() {
+            let logs = [];
+            
+            // Proses setiap duel
+            // Kita butuh set 'processed' agar duel tidak dihitung 2x (A vs B, lalu B vs A)
+            let processed = new Set();
+
+            gameState.players.forEach(p1 => {
+                if(p1.isDead || processed.has(p1.id)) return;
+                
+                let p2 = gameState.players.find(x => x.id === p1.lastOpponentId);
+                if(!p2 || p2.isDead) return;
+
+                processed.add(p1.id);
+                processed.add(p2.id);
+
+                // LOGIKA DUEL (Sederhana)
+                let a1 = p1.action;
+                let a2 = p2.action;
+
+                // Helper: Resolve 1 pair
+                const result = calculateDuel(p1, a1, p2, a2);
+                
+                // Update stats based on result
+                // (Implementasi detail logika Zombie/Shotgun/Vaccine disederhanakan agar muat)
+                applyDuelEffect(p1, p2, result.winner, result.effect);
+            });
+
+            gameState.round++;
+            if(gameState.round > 10) {
+                endGame();
+            } else {
+                startNewRound();
+            }
+        }
+
+        function calculateDuel(p1, a1, p2, a2) {
+            // Return winner: 1, 2, or 0 (draw). effect: string
+            // Prioritas: Shotgun > Vaccine > Zombie > Angka
+            
+            // Cek Shotgun
+            if(a1 === 'SHOTGUN') return {winner: 1, effect: 'SHOTGUN'};
+            if(a2 === 'SHOTGUN') return {winner: 2, effect: 'SHOTGUN'};
+
+            // Cek Vaccine
+            if(a1 === 'VACCINE') return {winner: 1, effect: 'VACCINE'};
+            if(a2 === 'VACCINE') return {winner: 2, effect: 'VACCINE'};
+
+            // Cek Zombie
+            if(a1 === 'Z_BITE' && a2 !== 'Z_BITE') return {winner: 1, effect: 'INFECT'};
+            if(a2 === 'Z_BITE' && a1 !== 'Z_BITE') return {winner: 2, effect: 'INFECT'};
+
+            // Angka vs Angka
+            if(typeof a1 === 'number' && typeof a2 === 'number') {
+                if(a1 > a2) return {winner: 1, effect: 'STEAL'};
+                if(a2 > a1) return {winner: 2, effect: 'STEAL'};
+            }
+            
+            return {winner: 0, effect: 'NONE'};
+        }
+
+        function applyDuelEffect(p1, p2, winnerCode, effect) {
+            // Simplified logic application
+            const winner = winnerCode === 1 ? p1 : (winnerCode === 2 ? p2 : null);
+            const loser = winnerCode === 1 ? p2 : (winnerCode === 2 ? p1 : null);
+
+            if(effect === 'SHOTGUN') {
+                winner.ammoS--;
+                if(loser.role === 'ZOMBIE') {
+                    loser.isDead = true; 
+                } else {
+                    winner.isDead = true; // Friendly fire
+                }
+            } else if (effect === 'VACCINE') {
+                winner.ammoV--;
+                if(loser.role === 'ZOMBIE') loser.role = 'HUMAN';
+            } else if (effect === 'INFECT') {
+                loser.role = 'ZOMBIE';
+                // Remove used number card from loser? (Simplified: no)
+            } else if (effect === 'STEAL') {
+                // Winner takes card logic (Visual only here for simplicity)
+            }
+
+            // Remove used one-time cards
+            // Remove number cards from hand
+            if(typeof p1.action === 'number') {
+                const idx = p1.cards.indexOf(p1.action);
+                if(idx > -1) p1.cards.splice(idx, 1);
+            }
+            if(typeof p2.action === 'number') {
+                const idx = p2.cards.indexOf(p2.action);
+                if(idx > -1) p2.cards.splice(idx, 1);
+            }
+        }
+
+        function broadcastState() {
+            // Kirim data spesifik ke setiap player (agar tidak bisa nyontek kartu lawan)
+            gameState.players.forEach(p => {
+                if(p.isBot) return;
+
+                // Data publik
+                const publicData = {
+                    round: gameState.round,
+                    hCount: gameState.players.filter(x => x.role === 'HUMAN' && !x.isDead).length,
+                    zCount: gameState.players.filter(x => x.role === 'ZOMBIE' && !x.isDead).length,
+                };
+
+                // Data pribadi
+                const myData = p;
+                
+                // Kirim
+                if(p.id === myId) {
+                    updateGameUI(publicData, myData);
+                } else {
+                    const clientConn = connections.find(c => c.peer === p.id);
+                    if(clientConn) {
+                        clientConn.send({
+                            type: 'GAME_UPDATE',
+                            public: publicData,
+                            me: myData
+                        });
+                    }
+                }
+            });
+        }
+
+        function endGame() {
+            // Simple End Logic
+            alert("GAME SELESAI! Cek hasil.");
+        }
+
+        function broadcast(msg) {
+            connections.forEach(c => c.send(msg));
+        }
+
+        // --- CLIENT LOGIC ---
+
+        function joinGame() {
+            const name = document.getElementById('join-name').value;
+            const roomId = document.getElementById('room-id-input').value;
+            if(!name || !roomId) return alert("Lengkapi data!");
+
+            initPeer(); // Get own ID first
+            
+            // Wait for ID then connect
+            setTimeout(() => {
+                conn = peer.connect(roomId);
+                
+                conn.on('open', () => {
+                    console.log("Connected to Host");
+                    switchScreen('waiting-screen');
+                    document.getElementById('client-wait-msg').classList.remove('hidden');
+                    document.getElementById('room-id-display').innerText = roomId;
+                    
+                    // Send Join Request
+                    conn.send({type: 'JOIN', name: name});
+                });
+
+                conn.on('data', (data) => {
+                    if(data.type === 'LOBBY_UPDATE') updateLobbyUI(data.data);
+                    if(data.type === 'GAME_UPDATE') {
+                        switchScreen('game-screen');
+                        updateGameUI(data.public, data.me);
+                    }
+                });
+                
+                conn.on('error', (err) => alert("Gagal connect ke Host"));
+            }, 1000);
+        }
+
+        function sendAction(cardValue) {
+            if(isHost) {
+                // Langsung update state sendiri
+                let me = gameState.players.find(p => p.id === myId);
+                me.action = cardValue;
+                document.getElementById('game-message').innerText = "Menunggu pemain lain...";
+                checkRoundComplete();
+            } else {
+                conn.send({type: 'ACTION', card: cardValue});
+                document.getElementById('game-message').innerText = "Menunggu pemain lain...";
+            }
+            // Hide buttons
+            document.getElementById('cards-container').innerHTML = '';
+        }
+
+        // --- UI UPDATES ---
+
+        function switchScreen(id) {
+            ['lobby-screen', 'waiting-screen', 'game-screen'].forEach(s => document.getElementById(s).classList.add('hidden'));
+            document.getElementById(id).classList.remove('hidden');
+        }
+
+        function updateLobbyUI(list) {
+            const container = document.getElementById('player-list');
+            container.innerHTML = '';
+            list.forEach(p => {
+                const div = document.createElement('div');
+                div.className = p.isBot ? "bg-gray-800 p-2 rounded text-gray-500 text-xs" : "bg-blue-900 p-2 rounded text-white font-bold neon-box";
+                div.innerText = p.name + (p.isBot ? " (BOT)" : "");
+                container.appendChild(div);
+            });
+        }
+
+        function updateGameUI(pub, me) {
+            // Update Stats
+            document.getElementById('round-counter').innerText = pub.round + "/10";
+            document.getElementById('count-human').innerText = pub.hCount;
+            document.getElementById('count-zombie').innerText = pub.zCount;
+
+            // Update My Status
+            const roleBadge = document.getElementById('my-role-badge');
+            roleBadge.innerText = me.role;
+            if(me.role === 'ZOMBIE') {
+                roleBadge.className = "px-3 py-1 bg-red-900 text-red-300 rounded text-xs font-bold border border-red-500";
+                document.getElementById('player-panel').className = "bg-slate-900 p-4 rounded-lg border-t-4 border-red-500";
+            } else {
+                roleBadge.className = "px-3 py-1 bg-blue-900 text-blue-300 rounded text-xs font-bold border border-blue-500";
+                document.getElementById('player-panel').className = "bg-slate-900 p-4 rounded-lg border-t-4 border-blue-500";
+            }
+            document.getElementById('my-name-display').innerText = me.name;
+
+            // Render Cards
+            const cardBox = document.getElementById('cards-container');
+            cardBox.innerHTML = '';
+
+            if(me.isDead) {
+                document.getElementById('game-message').innerText = "ANDA TELAH MATI.";
+                return;
+            }
+
+            document.getElementById('game-message').innerText = "GILIRAN ANDA";
+
+            // 1. Number Cards
+            me.cards.forEach(num => {
+                const btn = document.createElement('button');
+                btn.className = "w-16 h-24 bg-slate-700 rounded border border-slate-500 text-2xl font-bold hover:bg-slate-600 card-btn";
+                btn.innerText = num;
+                btn.onclick = () => sendAction(num);
+                cardBox.appendChild(btn);
+            });
+
+            // 2. Special Cards
+            if(me.role === 'ZOMBIE') {
+                const btn = document.createElement('button');
+                btn.className = "w-16 h-24 bg-red-800 rounded border border-red-500 text-xs font-bold hover:bg-red-700 card-btn";
+                btn.innerHTML = "<span class='text-2xl'>🧟</span><br>BITE";
+                btn.onclick = () => sendAction('Z_BITE');
+                cardBox.appendChild(btn);
+            } else {
+                if(me.ammoS > 0) {
+                    const btn = document.createElement('button');
+                    btn.className = "w-16 h-24 bg-yellow-900 rounded border border-yellow-500 text-xs font-bold hover:bg-yellow-800 card-btn";
+                    btn.innerHTML = "<span class='text-2xl'>🔫</span><br>KILL";
+                    btn.onclick = () => sendAction('SHOTGUN');
+                    cardBox.appendChild(btn);
+                }
+                if(me.ammoV > 0) {
+                    const btn = document.createElement('button');
+                    btn.className = "w-16 h-24 bg-green-900 rounded border border-green-500 text-xs font-bold hover:bg-green-800 card-btn";
+                    btn.innerHTML = "<span class='text-2xl'>💉</span><br>CURE";
+                    btn.onclick = () => sendAction('VACCINE');
+                    cardBox.appendChild(btn);
+                }
+            }
+        }
+
+    </script>
+</body>
+</html>
